@@ -16,17 +16,18 @@ final class UsageStore {
     private(set) var isRefreshing = false
 
     @ObservationIgnored let settings: AppSettings
-    @ObservationIgnored private let repository: AccountRepository
+    /// Finds the config folders: `AccountRepository.scan` in the app, fixtures in `--render --demo`.
+    @ObservationIgnored private let scan: @Sendable ([CustomFolder]) async -> [AccountConfig]
     @ObservationIgnored private let providers: [Provider: any UsageProvider]
     @ObservationIgnored private let configs: ClaudeConfigStore
     @ObservationIgnored private let cache: UsageCache
     /// The last folder scan, before names, order and Settings choices are applied.
     @ObservationIgnored private var scanned: [AccountConfig] = []
 
-    init(settings: AppSettings, repository: AccountRepository, providers: [Provider: any UsageProvider],
-         configs: ClaudeConfigStore, cache: UsageCache) {
+    init(settings: AppSettings, scan: @escaping @Sendable ([CustomFolder]) async -> [AccountConfig],
+         providers: [Provider: any UsageProvider], configs: ClaudeConfigStore, cache: UsageCache) {
         self.settings = settings
-        self.repository = repository
+        self.scan = scan
         self.providers = providers
         self.configs = configs
         self.cache = cache
@@ -37,9 +38,10 @@ final class UsageStore {
 
     static func live(settings: AppSettings) -> UsageStore {
         let configs = ClaudeConfigStore()
+        let repository = AccountRepository(configs: configs)
         return UsageStore(
             settings: settings,
-            repository: AccountRepository(configs: configs),
+            scan: { await repository.scan(customFolders: $0) },
             providers: [.claude: ClaudeUsageProvider.live(configs: configs), .codex: CodexUsageProvider()],
             configs: configs,
             cache: UsageCache())
@@ -57,7 +59,7 @@ final class UsageStore {
 
     /// Scans the folders again (off the main thread) and applies the Settings choices.
     func rescan() async {
-        scanned = await repository.scan(customFolders: settings.customFolders)
+        scanned = await scan(settings.customFolders)
         arrange()
     }
 

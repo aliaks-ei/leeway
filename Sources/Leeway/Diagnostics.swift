@@ -38,9 +38,11 @@ enum Diagnostics {
 
     /// `Leeway --render <dir>` writes the popover and menu bar label as PNGs:
     /// light theme showing % used, dark theme showing % left.
-    static func render(to dir: URL) async {
-        let settings = AppSettings()
-        let store = UsageStore.live(settings: settings)
+    /// With `--demo` it draws made-up accounts (`DemoData`) instead of the real ones, for the README.
+    static func render(to dir: URL, demo: Bool = false) async {
+        let settings = demo ? DemoData.settings() : AppSettings()
+        let store = demo ? DemoData.store(settings: settings) : UsageStore.live(settings: settings)
+        defer { if demo { DemoData.cleanUp() } }
         let updater = Updater()
         let launchAtLogin = LaunchAtLogin()
         await store.refreshAll()
@@ -64,6 +66,14 @@ enum Diagnostics {
                 .environment(\.colorScheme, scheme)
             write(label, to: dir.appendingPathComponent("menubar-\(name).png"))
         }
+        if demo {
+            settings.metric = .used
+            for (name, scheme) in [("light", ColorScheme.light), ("dark", ColorScheme.dark)] {
+                NSApplication.shared.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+                write(DemoHero(store: store, settings: settings, updater: updater, scheme: scheme),
+                      to: dir.appendingPathComponent("hero-\(name).png"))
+            }
+        }
         NSApplication.shared.appearance = NSAppearance(named: .aqua)
         for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             let view = SettingsView()
@@ -71,20 +81,22 @@ enum Diagnostics {
                 .environment(settings)
                 .environment(launchAtLogin)
                 .environment(\.staticRender, true)
-            writeHosted(view, appearance: appearance, to: dir.appendingPathComponent("settings-\(name).png"))
+            // The demo waits for the CLI lookups, so the picture has paths instead of spinners.
+            writeHosted(view, appearance: appearance, settle: demo ? 4 : 0.5,
+                        to: dir.appendingPathComponent("settings-\(name).png"))
         }
         print("Rendered to \(dir.path)")
     }
 
     /// Draws through a real window, for AppKit-backed views (Form, Toggle) that ImageRenderer cannot draw.
-    private static func writeHosted(_ view: some View, appearance: NSAppearance.Name, to url: URL) {
+    private static func writeHosted(_ view: some View, appearance: NSAppearance.Name, settle: TimeInterval, to url: URL) {
         let host = NSHostingView(rootView: view)
         host.frame = NSRect(origin: .zero, size: host.fittingSize)
         let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
         window.appearance = NSAppearance(named: appearance)
         window.contentView = host
         host.layoutSubtreeIfNeeded()
-        RunLoop.main.run(until: .now.addingTimeInterval(0.5))
+        RunLoop.main.run(until: .now.addingTimeInterval(settle))
         guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return }
         host.cacheDisplay(in: host.bounds, to: rep)
         try? rep.representation(using: .png, properties: [:])?.write(to: url)
