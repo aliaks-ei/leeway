@@ -1,0 +1,44 @@
+name: Bug report
+description: Something does not work as expected.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not paste tokens, the contents of `.credentials.json` or `auth.json`, or Keychain items.
+        `Leeway --dump` and the log never contain tokens.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected and what you saw instead.
+    validations:
+      required: true
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Provider
+      multiple: true
+      options: [Claude Code, Codex, Both, Not related to a provider]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Leeway version
+      placeholder: "0.4.0"
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      placeholder: "15.6"
+    validations:
+      required: true
+  - type: textarea
+    id: dump
+    attributes:
+      label: Output of `Leeway --dump`
+      description: Run `/Applications/Leeway.app/Contents/MacOS/Leeway --dump`. Remove emails if you want.
+      render: text

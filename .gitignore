@@ -1,0 +1,9 @@
+.build/
+build/
+.swiftpm/
+DerivedData/
+.DS_Store
+
+# Local notes and tool state
+REVIEW.md
+.claude/
