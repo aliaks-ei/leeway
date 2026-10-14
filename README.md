@@ -7,6 +7,13 @@
 
 A macOS menu bar app that shows your **Claude Code** and **Codex** plan limits for every account signed in on your Mac.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/hero-dark.jpg">
+    <img src="docs/images/hero-light.jpg" width="760" alt="The Leeway popover under the menu bar, with Personal and Work cards for Claude and Codex that show session and weekly usage and their reset times">
+  </picture>
+</p>
+
 - Shows the 5-hour and weekly windows, with the time until each one resets.
 - Finds every account by itself: `~/.claude`, `~/.codex` and folders such as `~/.claude-work`.
 - Puts the account closest to its limit, or the accounts you choose, in the menu bar.
@@ -125,7 +132,7 @@ log stream --level info --predicate 'subsystem == "io.github.aliaks-ei.Leeway"'
 ```
 
 - `--dump` prints every account it finds, with its readings. It never prints tokens.
-- `--render` writes PNGs in the light and dark themes: the popover, the menu bar label and Settings.
+- `--render` writes PNGs in the light and dark themes: the popover, the menu bar label and Settings. Add `--demo` to draw made-up accounts instead of yours; the images in `docs/images` in this README come from it.
 - The log shows fetch errors, renewals and discovery. Emails and paths are private in the log; tokens are never logged.
 
 ## Development

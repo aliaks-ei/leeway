@@ -18,7 +18,7 @@ enum Main {
             let dir = URL(fileURLWithPath: CommandLine.arguments[index + 1])
             NSApplication.shared.setActivationPolicy(.accessory)
             Task { @MainActor in
-                await Diagnostics.render(to: dir)
+                await Diagnostics.render(to: dir, demo: CommandLine.arguments.contains("--demo"))
                 exit(0)
             }
             NSApplication.shared.run()
