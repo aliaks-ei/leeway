@@ -115,9 +115,43 @@ struct AccountConfigTests {
         let now = Date(timeIntervalSince1970: 1000)
         let usage = AccountUsage(session: UsageWindow(usedPercent: 20, resetsAt: now.addingTimeInterval(-1)),
                                  weekly: UsageWindow(usedPercent: 70), measuredAt: now)
-        // The session window has reset, so it counts as 0.
-        #expect(usage.menuBarUsed(.sessionFirst, now: now) == 0)
+        // A passed reset is unknown until confirmed by a fresh reading.
+        #expect(usage.menuBarUsed(.sessionFirst, now: now) == nil)
         #expect(usage.menuBarUsed(.weeklyFirst, now: now) == 70)
         #expect(usage.menuBarUsed(.closest, now: now) == 70)
+    }
+}
+
+struct ReadingFreshnessTests {
+    @Test func resetDoesNotImplyAvailableQuota() {
+        let now = Date(timeIntervalSince1970: 1000)
+        let window = UsageWindow(usedPercent: 95, resetsAt: now)
+        #expect(window.effectiveUsed(now: now) == nil)
+        #expect(window.effectiveUsed(now: now.addingTimeInterval(-1)) == 95)
+        let unused = UsageWindow(usedPercent: 0, fullLength: 5 * 3600)
+        #expect(unused.effectiveUsed(now: now) == 0)
+    }
+
+    @Test func freshnessRequiresSuccessfulRecentUnexpiredReading() {
+        let now = Date(timeIntervalSince1970: 10000)
+        let usage = AccountUsage(session: UsageWindow(usedPercent: 42), measuredAt: now)
+        #expect(AccountState(usage: usage).isCurrent(now: now))
+        #expect(!AccountState(usage: usage, error: .codexTimedOut).isCurrent(now: now))
+        #expect(!AccountState(usage: usage, error: .signInExpired).isCurrent(now: now))
+        #expect(!AccountState(usage: usage).isCurrent(now: now.addingTimeInterval(900)))
+        #expect(!AccountState().isCurrent(now: now))
+        let pending = usage.with(scoped: [ScopedWindow(name: "Model", window: UsageWindow(usedPercent: 80, resetsAt: now))])
+        #expect(!AccountState(usage: pending).isCurrent(now: now))
+    }
+
+    @Test func selectedWindowMatchesDisplayedPercentage() {
+        let now = Date(timeIntervalSince1970: 1000)
+        let usage = AccountUsage(session: UsageWindow(usedPercent: 30), weekly: UsageWindow(usedPercent: 70), measuredAt: now)
+        #expect(usage.menuBarSelection(.sessionFirst, now: now)?.label == "5-hour")
+        #expect(usage.menuBarSelection(.closest, now: now)?.label == "Weekly")
+        let weeklyOnly = AccountUsage(weekly: UsageWindow(usedPercent: 70), measuredAt: now)
+        #expect(weeklyOnly.menuBarUsed(.sessionFirst, now: now) == 70)
+        let expired = AccountUsage(weekly: UsageWindow(usedPercent: 70, resetsAt: now), measuredAt: now)
+        #expect(expired.menuBarUsed(.closest, now: now) == nil)
     }
 }

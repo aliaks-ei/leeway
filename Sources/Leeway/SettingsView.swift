@@ -6,6 +6,7 @@ struct SettingsView: View {
     @Environment(AppSettings.self) private var settings
     @Environment(LaunchAtLogin.self) private var launchAtLogin
     @Environment(\.staticRender) private var staticRender
+    @Environment(\.openWindow) private var openWindow
     @State private var folderMessage: String?
     @State private var foundCodex: [String] = []
     @State private var lookingForCodex = true
@@ -214,16 +215,7 @@ struct SettingsView: View {
     }
 
     private func chooseCodex() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.showsHiddenFiles = true
-        panel.treatsFilePackagesAsDirectories = true
-        panel.directoryURL = URL(fileURLWithPath: "/opt/homebrew/bin")
-        panel.prompt = String(localized: "Use")
-        panel.message = String(localized: "Choose the codex program")
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        settings.codexPath = url.path
+        SettingsWindow.chooseCodex(openWindow, settings: settings)
     }
 
     private func findCodex() async {

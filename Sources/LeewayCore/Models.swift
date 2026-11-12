@@ -74,14 +74,14 @@ public struct UsageWindow: Codable, Equatable, Sendable {
         self.fullLength = fullLength
     }
 
-    /// A window whose reset time has passed since the reading started again from zero.
+    /// The reported reset time has passed; a new reading is needed to confirm availability.
     public func hasReset(now: Date = .now) -> Bool {
         guard let resetsAt else { return false }
         return resetsAt <= now
     }
 
-    public func effectiveUsed(now: Date = .now) -> Double {
-        hasReset(now: now) ? 0 : min(max(usedPercent, 0), 100)
+    public func effectiveUsed(now: Date = .now) -> Double? {
+        hasReset(now: now) ? nil : min(max(usedPercent, 0), 100)
     }
 }
 
@@ -121,13 +121,23 @@ public struct AccountUsage: Codable, Equatable, Sendable {
 
     /// Used % of the window the menu bar shows for this account.
     public func menuBarUsed(_ preference: MenuBarWindow, now: Date = .now) -> Double? {
-        let session = session?.effectiveUsed(now: now)
-        let weekly = weekly?.effectiveUsed(now: now)
+        menuBarSelection(preference, now: now)?.window.effectiveUsed(now: now)
+    }
+
+    public func menuBarSelection(_ preference: MenuBarWindow, now: Date = .now) -> (label: String, window: UsageWindow)? {
+        let session = session.map { (label: String(localized: "5-hour"), window: $0) }
+        let weekly = weekly.map { (label: String(localized: "Weekly"), window: $0) }
         return switch preference {
         case .sessionFirst: session ?? weekly
         case .weeklyFirst: weekly ?? session
-        case .closest: [session, weekly].compactMap { $0 }.max()
+        case .closest: [session, weekly].compactMap { $0 }.max {
+            ($0.window.effectiveUsed(now: now) ?? -1) < ($1.window.effectiveUsed(now: now) ?? -1)
         }
+        }
+    }
+
+    public func hasPendingReset(now: Date = .now) -> Bool {
+        ([session, weekly].compactMap { $0 } + (scoped ?? []).map(\.window)).contains { $0.hasReset(now: now) }
     }
 
     public func with(plan: String?) -> AccountUsage {
@@ -166,6 +176,11 @@ public struct AccountState: Equatable, Sendable {
     public var worked: Bool? {
         if let error { return error.kind != .failure && usage == nil ? nil : false }
         return usage != nil ? true : nil
+    }
+
+    public func isCurrent(now: Date = .now) -> Bool {
+        guard let usage else { return false }
+        return error == nil && now.timeIntervalSince(usage.measuredAt) < 15 * 60 && !usage.hasPendingReset(now: now)
     }
 }
 

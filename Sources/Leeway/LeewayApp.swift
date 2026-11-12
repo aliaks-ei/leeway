@@ -57,7 +57,9 @@ struct LeewayApp: App {
                 .environment(model.settings)
                 .environment(model.updater)
         } label: {
-            MenuBarLabel(items: model.store.menuBarItems(), metric: model.settings.metric)
+            TimelineView(.periodic(from: .now, by: 30)) { context in
+                MenuBarLabel(items: model.store.menuBarItems(now: context.date), metric: model.settings.metric, now: context.date)
+            }
         }
         .menuBarExtraStyle(.window)
 

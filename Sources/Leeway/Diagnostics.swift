@@ -73,6 +73,24 @@ enum Diagnostics {
                 write(DemoHero(store: store, settings: settings, updater: updater, scheme: scheme),
                       to: dir.appendingPathComponent("hero-\(name).png"))
             }
+            let statusStore = DemoData.store(settings: settings, statusExamples: true)
+            await statusStore.refreshAll()
+            for (name, scheme) in [("light", ColorScheme.light), ("dark", ColorScheme.dark)] {
+                NSApplication.shared.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+                for compact in [false, true] {
+                    settings.compactCards = compact
+                    let view = PopoverView()
+                        .environment(statusStore).environment(settings).environment(updater)
+                        .background(scheme == .dark ? Color(white: 0.17) : Color(white: 0.94))
+                        .environment(\.colorScheme, scheme).environment(\.staticRender, true)
+                    writeHosted(view, appearance: scheme == .dark ? .darkAqua : .aqua, settle: 0.1,
+                                to: dir.appendingPathComponent("status-\(name)\(compact ? "-compact" : "").png"))
+                }
+                write(MenuBarLabel(items: statusStore.menuBarItems(), metric: settings.metric)
+                    .padding(6).background(scheme == .dark ? Color(white: 0.17) : Color(white: 0.94))
+                    .environment(\.colorScheme, scheme), to: dir.appendingPathComponent("menubar-status-\(name).png"))
+            }
+            settings.compactCards = false
         }
         NSApplication.shared.appearance = NSAppearance(named: .aqua)
         for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {

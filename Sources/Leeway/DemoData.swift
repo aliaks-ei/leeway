@@ -45,18 +45,36 @@ enum DemoData {
         return settings
     }
 
-    static func store(settings: AppSettings) -> UsageStore {
+    static func store(settings: AppSettings, statusExamples: Bool = false) -> UsageStore {
         let accounts = fixtures.map { fixture in
             AccountConfig(provider: fixture.provider, path: path(fixture.folder),
                           isDefaultFolder: fixture.folder == fixture.provider.defaultFolder,
                           email: fixture.email, identity: "\(fixture.provider.rawValue):\(fixture.email)")
         }
         let usages = Dictionary(uniqueKeysWithValues: fixtures.map { (path($0.folder), $0.usage) })
-        let provider = DemoProvider(usages: usages)
-        let cache = FileManager.default.temporaryDirectory.appendingPathComponent("leeway-demo-cache.json")
+        let failures: [String: UsageError] = statusExamples ? [
+            path(".claude"): .signInExpired,
+            path(".claude-work"): .notSignedIn(.claude, loginCommand: "CLAUDE_CONFIG_DIR=~/.claude-work claude"),
+            path(".codex"): .codexNotFound,
+            path(".codex-work"): .rateLimited,
+        ] : [:]
+        let provider = DemoProvider(usages: usages, failures: failures)
+        let cache = FileManager.default.temporaryDirectory.appendingPathComponent(statusExamples ? "leeway-demo-status-cache.json" : "leeway-demo-cache.json")
         try? FileManager.default.removeItem(at: cache)
+        let usageCache = UsageCache(file: cache)
+        if statusExamples {
+            let now = Date.now
+            var readings: [String: AccountUsage] = [:]
+            for account in accounts where account.path != path(".claude-work") {
+                var usage = usages[account.path]!(now)
+                usage.measuredAt = now.addingTimeInterval(-1800)
+                if account.path == path(".claude") { usage.session?.resetsAt = now.addingTimeInterval(-60) }
+                readings[account.id] = usage
+            }
+            usageCache.save(readings)
+        }
         return UsageStore(settings: settings, scan: { _ in accounts }, providers: [.claude: provider, .codex: provider],
-                          configs: ClaudeConfigStore(), cache: UsageCache(file: cache))
+                          configs: ClaudeConfigStore(), cache: usageCache)
     }
 
     static func cleanUp() {
@@ -65,9 +83,11 @@ enum DemoData {
 
     private struct DemoProvider: UsageProvider {
         let usages: [String: @Sendable (Date) -> AccountUsage]
+        let failures: [String: UsageError]
 
         func fetch(_ account: AccountConfig, cached: AccountUsage?, context: FetchContext) async throws -> AccountUsage {
-            usages[account.path]!(.now)
+            if let error = failures[account.path] { throw error }
+            return usages[account.path]!(.now)
         }
     }
 

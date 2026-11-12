@@ -24,5 +24,9 @@ let package = Package(
             name: "LeewayCoreTests",
             dependencies: ["LeewayCore"],
             path: "Tests/LeewayCoreTests"),
+        .testTarget(
+            name: "LeewayTests",
+            dependencies: ["Leeway", "LeewayCore"],
+            path: "Tests/LeewayTests"),
     ]
 )
