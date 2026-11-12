@@ -39,6 +39,8 @@ private actor FakeClient: ClaudeUsageClient {
 
     init(_ result: Result<AccountUsage, any Error>) { self.result = result }
 
+    func set(_ result: Result<AccountUsage, any Error>) { self.result = result }
+
     func usage(token: String) async throws -> AccountUsage {
         calls.append(token)
         return try result.get()
@@ -105,6 +107,36 @@ struct ClaudeUsageProviderTests {
         #expect(first.session == reading.session)
         await #expect(throws: UsageError.rateLimited) {
             try await provider.fetch(account, cached: nil, context: context)
+        }
+        #expect(await client.calls.count == 1)
+    }
+
+    /// A request that never reached the server does not start the two-minute limit.
+    @Test func retriesAtOnceAfterANetworkError() async throws {
+        let keychain = FakeKeychain()
+        await keychain.renew()
+        let client = FakeClient(.failure(UsageError.system("offline")))
+        let provider = provider(keychain: keychain, renewer: FakeRenewer(keychain: keychain), client: client)
+
+        await #expect(throws: UsageError.system("offline")) {
+            try await provider.fetch(account, cached: reading, context: FetchContext())
+        }
+        await client.set(.success(reading))
+        _ = try await provider.fetch(account, cached: reading, context: FetchContext())
+        #expect(await client.calls.count == 2)
+    }
+
+    /// While the two-minute limit skips the request, the server's last error still shows.
+    @Test func keepsServerErrorWhileTheLimitHolds() async {
+        let keychain = FakeKeychain()
+        await keychain.renew()
+        let client = FakeClient(.failure(UsageError.httpStatus(500)))
+        let provider = provider(keychain: keychain, renewer: FakeRenewer(keychain: keychain), client: client)
+
+        for _ in 0 ..< 2 {
+            await #expect(throws: UsageError.httpStatus(500)) {
+                try await provider.fetch(account, cached: reading, context: FetchContext())
+            }
         }
         #expect(await client.calls.count == 1)
     }

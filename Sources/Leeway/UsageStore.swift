@@ -23,6 +23,9 @@ final class UsageStore {
     @ObservationIgnored private let cache: UsageCache
     /// The last folder scan, before names, order and Settings choices are applied.
     @ObservationIgnored private var scanned: [AccountConfig] = []
+    /// Whether each account's last fetch in this run worked. A reading loaded from the cache does not
+    /// count: a duplicate folder is never fetched, so its old reading would look healthy for ever.
+    @ObservationIgnored private var worked: [String: Bool] = [:]
 
     init(settings: AppSettings, scan: @escaping @Sendable ([CustomFolder]) async -> [AccountConfig],
          providers: [Provider: any UsageProvider], configs: ClaudeConfigStore, cache: UsageCache) {
@@ -67,7 +70,7 @@ final class UsageStore {
     private func arrange() {
         let all = AccountArrangement.arrange(
             scanned, overrides: settings.overrides, order: settings.order,
-            cached: states.compactMapValues(\.usage), worked: states.compactMapValues(\.worked))
+            cached: states.compactMapValues(\.usage), worked: worked)
         if all != allAccounts { allAccounts = all }
         let visible = all.filter(\.isVisible)
         if visible != accounts { accounts = visible }
@@ -124,7 +127,12 @@ final class UsageStore {
     func setHidden(_ hidden: Bool, for account: AccountConfig) {
         settings.updateOverride(for: account.id) { $0.hidden = hidden }
         arrange()
-        if !hidden { Task { await refresh([account]) } }
+        if !hidden {
+            Task {
+                await refresh([account])
+                saveCache()
+            }
+        }
     }
 
     func setInMenuBar(_ inMenuBar: Bool, for account: AccountConfig) {
@@ -152,6 +160,7 @@ final class UsageStore {
         await rescan()
         if let account = accounts.first(where: { $0.id == id }) {
             await refresh([account])
+            saveCache()
         }
         return .added
     }
@@ -160,6 +169,7 @@ final class UsageStore {
         settings.customFolders.removeAll { $0.accountID == account.id }
         settings.overrides[account.id] = nil
         states[account.id] = nil
+        worked[account.id] = nil
         scanned.removeAll { $0.id == account.id }
         arrange()
     }
@@ -200,7 +210,7 @@ final class UsageStore {
         defer {
             isRefreshing = false
             lastRefresh = .now
-            cache.save(states.compactMapValues(\.usage))
+            saveCache()
         }
         // Pick up folders signed in since the last pass.
         await rescan()
@@ -211,6 +221,12 @@ final class UsageStore {
         arrange()
         await refresh(accounts.filter { !fetched.contains($0.id) })
         arrange()
+    }
+
+    /// Saves the readings of the folders that still exist, so a removed folder does not stay in the cache.
+    private func saveCache() {
+        let ids = Set(allAccounts.map(\.id))
+        cache.save(states.compactMapValues(\.usage).filter { ids.contains($0.key) })
     }
 
     /// The last refresh pass had at least one failure, for retrying when the network comes back.
@@ -240,6 +256,7 @@ final class UsageStore {
             Log.fetch.notice("\(account.provider.title, privacy: .public) \(account.displayPath, privacy: .private): \(String(describing: usageError), privacy: .private)")
             states[account.id] = AccountState(usage: usageError.dropsReading ? nil : cached, error: usageError)
         }
+        worked[account.id] = states[account.id]?.worked
     }
 
     /// Statusline snapshots change while Claude runs, so pick them up between full refreshes.

@@ -34,6 +34,19 @@ struct CodexParsingTests {
         #expect(usage.identity == nil)
     }
 
+    /// An unused window reports its reset as now plus its full length; that is not a reset time.
+    @Test func dropsResetTimeOfWindowThatHasNotStarted() throws {
+        let now = Date(timeIntervalSince1970: 1_794_491_687)
+        let limits = Data("""
+        {"rateLimits": {"primary": {"usedPercent": 0, "windowDurationMins": 300, "resetsAt": 1794509687},
+                        "secondary": {"usedPercent": 0, "windowDurationMins": 10080, "resetsAt": 1795003163}}}
+        """.utf8)
+        let usage = try CodexUsageProvider.parse(account: account, rateLimits: limits, loginCommand: "codex login", now: now)
+        #expect(usage.session == UsageWindow(usedPercent: 0, resetsAt: nil, fullLength: 5 * 3600))
+        // Unused, but started: the reset is not a full window away.
+        #expect(usage.weekly?.resetsAt == Date(timeIntervalSince1970: 1_795_003_163))
+    }
+
     @Test func reportsLoginStates() {
         let limits = Data(#"{"rateLimits": {}}"#.utf8)
         #expect(throws: UsageError.notSignedIn(.codex, loginCommand: "x")) {
@@ -90,6 +103,18 @@ struct CodexAppServerTests {
         sleep 5
         """)
         await #expect(throws: UsageError.codexError("nope")) {
+            try await CodexAppServer.request(binary: binary, home: NSTemporaryDirectory(), calls: [.init(method: "a")], timeout: 5)
+        }
+    }
+
+    /// A failed `initialize` must not wait for the timeout.
+    @Test func reportsInitializeError() async throws {
+        let binary = try fakeCodex("""
+        read a
+        echo '{"id":1,"error":{"message":"bad client"}}'
+        sleep 5
+        """)
+        await #expect(throws: UsageError.codexError("bad client")) {
             try await CodexAppServer.request(binary: binary, home: NSTemporaryDirectory(), calls: [.init(method: "a")], timeout: 5)
         }
     }

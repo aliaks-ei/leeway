@@ -20,6 +20,9 @@ public actor ClaudeUsageProvider: UsageProvider {
 
     private var apiBlockedUntil: [String: Date] = [:]
     private var lastAPIRead: [String: Date] = [:]
+    /// The error of the last request that the server answered. It stands while the two-minute limit
+    /// skips the next request.
+    private var lastAPIFailure: [String: UsageError] = [:]
     private var renewalFailedAt: [String: Date] = [:]
     /// Renewals in progress. A second fetch for the same account waits for the first renewal instead of
     /// starting another CLI: two CLIs that refresh the same rotating token can sign each other out.
@@ -82,6 +85,7 @@ public actor ClaudeUsageProvider: UsageProvider {
         let blocked = apiBlockedUntil[account.id].map { $0 > now } ?? false
         let tooSoon = lastAPIRead[account.id].map { now.timeIntervalSince($0) < Self.minAPIInterval } ?? false
         if blocked || tooSoon, let usage = AccountUsage.newest(snapshot, cached) {
+            if snapshot == nil, let failure = lastAPIFailure[account.id] { throw failure }
             return usage.with(plan: plan)
         }
         if blocked { throw UsageError.rateLimited }
@@ -89,16 +93,25 @@ public actor ClaudeUsageProvider: UsageProvider {
         do {
             lastAPIRead[account.id] = now
             var usage = try await client.usage(token: credentials.accessToken)
+            lastAPIFailure[account.id] = nil
             usage.plan = plan
             return (AccountUsage.newest(usage, snapshot) ?? usage).with(scoped: usage.scoped)
         } catch let ClaudeAPIError.rateLimited(retryAfter) {
             apiBlockedUntil[account.id] = now.addingTimeInterval(retryAfter ?? Self.defaultBackOff)
+            lastAPIFailure[account.id] = nil
             Log.fetch.notice("Claude usage API returned 429; backing off")
             if let usage = AccountUsage.newest(snapshot, cached) { return usage.with(plan: plan) }
             throw UsageError.rateLimited
         } catch {
+            let failure = UsageError(error)
+            if case .system = failure {
+                // The request did not reach the server, so it does not count against the two-minute limit.
+                lastAPIRead[account.id] = nil
+            } else {
+                lastAPIFailure[account.id] = failure
+            }
             if let snapshot { return snapshot.with(plan: plan) }
-            throw UsageError(error)
+            throw failure
         }
     }
 

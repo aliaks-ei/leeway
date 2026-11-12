@@ -111,6 +111,25 @@ private struct ScreenReader: NSViewRepresentable {
             super.viewDidMoveToWindow()
             onChange?(window?.screen)
         }
+
+        // The menu bar window grows with its content, but it does not shrink when the content gets smaller
+        // while the window is closed (for example when "Compact cards" is turned on in Settings). The
+        // content then sits in the middle of a window that is too tall. This view has the size of the
+        // content, so it can tell.
+        override func setFrameSize(_ newSize: NSSize) {
+            super.setFrameSize(newSize)
+            Task { @MainActor [weak self] in self?.shrinkWindowToContent() }
+        }
+
+        private func shrinkWindowToContent() {
+            guard let window, let container = window.contentView, bounds.height > 0 else { return }
+            let extra = container.bounds.height - bounds.height
+            guard extra > 0.5 else { return }
+            var frame = window.frame
+            frame.origin.y += extra // Keep the top edge under the menu bar.
+            frame.size.height -= extra
+            window.setFrame(frame, display: true)
+        }
     }
 }
 
@@ -448,13 +467,19 @@ private struct WindowRow: View {
     }
 
     private var shortResetText: String {
-        guard let window, !window.hasReset(now: now), let resetsAt = window.resetsAt else { return "" }
+        guard let window, !window.hasReset(now: now) else { return "" }
+        // A window that has not started shows its full length, which does not count down.
+        guard let resetsAt = window.resetsAt ?? window.fullLength.map(now.addingTimeInterval) else { return "" }
         return UsageFormat.duration(from: now, to: resetsAt)
     }
 
     private var resetText: String {
         guard let window else { return String(localized: "No data yet") }
         if window.hasReset(now: now) { return String(localized: "Window reset since last reading") }
+        if let length = window.fullLength, window.resetsAt == nil {
+            // An unused window has no reset time: it starts on the first message.
+            return String(localized: "Resets \(UsageFormat.duration(from: now, to: now.addingTimeInterval(length))) after first use")
+        }
         guard let resetsAt = window.resetsAt else { return String(localized: "Reset time unknown") }
         return String(localized: "Resets in \(UsageFormat.duration(from: now, to: resetsAt))")
     }
@@ -466,7 +491,9 @@ private struct WindowRow: View {
         let amount = metric == .used ? String(localized: "\(percent) used") : String(localized: "\(percent) left")
         guard let window else { return amount }
         if window.hasReset(now: now) { return String(localized: "\(amount), window reset since last reading") }
-        guard let resetsAt = window.resetsAt else { return amount }
+        guard let resetsAt = window.resetsAt else {
+            return window.fullLength != nil ? String(localized: "\(amount), starts on first use") : amount
+        }
         return String(localized: "\(amount), resets in \(UsageFormat.spokenDuration(from: now, to: resetsAt))")
     }
 }
