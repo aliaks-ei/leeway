@@ -45,7 +45,8 @@ public struct CodexUsageProvider: UsageProvider {
         ])
     }
 
-    public static func parse(account accountData: Data, rateLimits rateLimitsData: Data, loginCommand: String) throws -> AccountUsage {
+    public static func parse(account accountData: Data, rateLimits rateLimitsData: Data, loginCommand: String,
+                             now: Date = .now) throws -> AccountUsage {
         let account = try? JSONDecoder().decode(AccountResponse.self, from: accountData)
         switch account?.type {
         case nil: throw UsageError.notSignedIn(.codex, loginCommand: loginCommand)
@@ -62,7 +63,9 @@ public struct CodexUsageProvider: UsageProvider {
         var weekly: UsageWindow?
         for (isPrimary, limit) in [(true, snapshot.primary), (false, snapshot.secondary)] {
             guard let limit, let used = limit.usedPercent else { continue }
-            let window = UsageWindow(usedPercent: used, resetsAt: limit.resetsAt)
+            let started = limit.hasStarted(now: now)
+            let window = UsageWindow(usedPercent: used, resetsAt: started ? limit.resetsAt : nil,
+                                     fullLength: started ? nil : limit.durationMinutes.map { $0 * 60 })
             let isSession = limit.durationMinutes.map { $0 <= 24 * 60 } ?? isPrimary
             if isSession { session = session ?? window } else { weekly = weekly ?? window }
         }
@@ -71,7 +74,7 @@ public struct CodexUsageProvider: UsageProvider {
             session: session,
             weekly: weekly,
             plan: planName(account?.planType ?? snapshot.planType),
-            measuredAt: .now,
+            measuredAt: now,
             email: email,
             identity: email.map { "codex:\(account?.workspace ?? ""):\($0)" })
     }
@@ -138,6 +141,13 @@ public struct CodexUsageProvider: UsageProvider {
                 usedPercent = container.number(.usedPercent)
                 resetsAt = container.date(.resetsAt)
                 durationMinutes = container.number(.windowDurationMins)
+            }
+
+            /// A window starts on the first message. Until then the server reports 0% used and a reset
+            /// time of now plus the full window, which moves with each reading and is not a real reset time.
+            func hasStarted(now: Date) -> Bool {
+                guard usedPercent == 0, let resetsAt, let durationMinutes else { return true }
+                return abs(resetsAt.timeIntervalSince(now) - durationMinutes * 60) > 120
             }
 
             private enum CodingKeys: String, CodingKey { case usedPercent, resetsAt, windowDurationMins }

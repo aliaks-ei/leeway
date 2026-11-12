@@ -7,7 +7,7 @@ struct SettingsView: View {
     @Environment(LaunchAtLogin.self) private var launchAtLogin
     @Environment(\.staticRender) private var staticRender
     @State private var folderMessage: String?
-    @State private var foundCodex: String?
+    @State private var foundCodex: [String] = []
     @State private var lookingForCodex = true
     @State private var foundClaude: String?
     @State private var lookingForClaude = true
@@ -181,12 +181,21 @@ struct SettingsView: View {
             LabeledContent("In use") {
                 if lookingForCodex {
                     ProgressView().controlSize(.small)
+                } else if foundCodex.isEmpty {
+                    Text("Not found")
+                        .foregroundStyle(.red)
                 } else {
-                    Text(foundCodex.map { PathDisplay.abbreviate($0) } ?? String(localized: "Not found"))
-                        .foregroundStyle(foundCodex == nil ? .red : .secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .textSelection(.enabled)
+                    VStack(alignment: .trailing, spacing: 2) {
+                        ForEach(foundCodex, id: \.self) { path in
+                            Text(PathDisplay.abbreviate(path))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                // The home folder at the start tells two builds apart.
+                                .truncationMode(foundCodex.count > 1 ? .tail : .middle)
+                                .textSelection(.enabled)
+                                .help(path)
+                        }
+                    }
                 }
             }
             HStack {
@@ -220,11 +229,17 @@ struct SettingsView: View {
     private func findCodex() async {
         lookingForCodex = true
         await CLILocator.shared.reset()
-        if let custom = settings.resolvedCodexPath {
-            foundCodex = CLILocator.isExecutable(custom) ? custom : nil
-        } else {
-            foundCodex = await CodexUsageProvider.sharedBinary()
+        // A Codex home can have its own build, so show what each account runs. Without accounts, show
+        // what `~/.codex` would run.
+        let homes = store.accounts(for: .codex).map(\.path)
+        var found: [String] = []
+        for home in homes.isEmpty ? [NSHomeDirectory() + "/.codex"] : homes {
+            if let path = await CodexUsageProvider.binary(home: home, customPath: settings.resolvedCodexPath),
+               !found.contains(path) {
+                found.append(path)
+            }
         }
+        foundCodex = found
         lookingForCodex = false
     }
 }

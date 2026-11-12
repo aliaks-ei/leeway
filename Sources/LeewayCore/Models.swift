@@ -64,10 +64,14 @@ public struct AccountConfig: Codable, Identifiable, Hashable, Sendable {
 public struct UsageWindow: Codable, Equatable, Sendable {
     public var usedPercent: Double
     public var resetsAt: Date?
+    /// The length of a window that has not started, in seconds. Such a window has no reset time yet:
+    /// it resets this long after the first message. Nil for a running window.
+    public var fullLength: TimeInterval?
 
-    public init(usedPercent: Double, resetsAt: Date? = nil) {
+    public init(usedPercent: Double, resetsAt: Date? = nil, fullLength: TimeInterval? = nil) {
         self.usedPercent = usedPercent
         self.resetsAt = resetsAt
+        self.fullLength = fullLength
     }
 
     /// A window whose reset time has passed since the reading started again from zero.

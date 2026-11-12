@@ -13,11 +13,20 @@ enum SettingsWindow {
     static func show(_ openWindow: OpenWindowAction) {
         NSApp.setActivationPolicy(.regular)
         openWindow(id: id)
-        NSApp.activate()
-        DispatchQueue.main.async {
-            NSApp.windows
-                .first { $0.identifier?.rawValue.hasPrefix(id) == true }?
-                .makeKeyAndOrderFront(nil)
+        // The scene shows its window, and the policy change takes effect, some run loop turns later.
+        // Before that, activation does nothing and the window stays behind the other apps. So wait for it.
+        Task {
+            for _ in 0 ..< 40 {
+                if let window = NSApp.windows.first(where: { $0.identifier?.rawValue.hasPrefix(id) == true }),
+                   window.isVisible {
+                    NSApp.activate()
+                    window.makeKeyAndOrderFront(nil)
+                    // In front even when macOS does not make the app active.
+                    window.orderFrontRegardless()
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(25))
+            }
         }
     }
 

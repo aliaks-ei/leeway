@@ -126,7 +126,8 @@ enum CodexAppServer {
                     if let result = message["result"] as? [String: Any],
                        let json = try? JSONSerialization.data(withJSONObject: result) {
                         state.results[id] = json
-                    } else if let error = message["error"] as? [String: Any], ids.contains(id) {
+                    } else if let error = message["error"] as? [String: Any], id == 1 || ids.contains(id) {
+                        // ID 1 is `initialize`; when it fails, no call gets an answer.
                         return .failure(.codexError((error["message"] as? String) ?? "Codex returned an error."))
                     }
                 }

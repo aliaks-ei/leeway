@@ -19,7 +19,7 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.4.0</string>
+	<string>0.4.1</string>
 	<!-- build-app.sh replaces this with the Git commit count. -->
 	<key>CFBundleVersion</key>
 	<string>4</string>
