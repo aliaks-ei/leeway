@@ -57,7 +57,9 @@ struct LeewayApp: App {
                 .environment(model.settings)
                 .environment(model.updater)
         } label: {
-            MenuBarLabel(items: model.store.menuBarItems(), metric: model.settings.metric)
+            // TimelineView here causes reentrant status-item layout during app launch.
+            MenuBarLabel(items: model.store.menuBarItems(now: model.store.displayDate),
+                         metric: model.settings.metric, now: model.store.displayDate)
         }
         .menuBarExtraStyle(.window)
 

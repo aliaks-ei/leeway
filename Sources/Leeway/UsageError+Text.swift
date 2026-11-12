@@ -2,6 +2,17 @@ import Foundation
 import LeewayCore
 
 extension UsageError {
+    func recoveryCommand(for account: AccountConfig) -> String? {
+        switch self {
+        case let .notSignedIn(_, command), let .renewalFailed(command): command
+        case .incompleteClaudeLogin, .signInExpired, .signInRejected:
+            account.loginCommand
+        case .codexStopped:
+            account.loginCommand
+        default: nil
+        }
+    }
+
     /// The text the card shows.
     var message: String {
         switch self {

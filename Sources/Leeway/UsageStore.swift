@@ -14,6 +14,7 @@ final class UsageStore {
     private(set) var states: [String: AccountState] = [:]
     private(set) var lastRefresh: Date?
     private(set) var isRefreshing = false
+    var displayDate = Date.now
 
     @ObservationIgnored let settings: AppSettings
     /// Finds the config folders: `AccountRepository.scan` in the app, fixtures in `--render --demo`.
@@ -80,7 +81,12 @@ final class UsageStore {
 
     struct MenuBarItem: Equatable {
         var provider: Provider
+        var accountName: String
+        var windowName: String?
         var used: Double?
+        var measuredAt: Date?
+        var isStale: Bool
+        var awaitingReset: Bool
     }
 
     func menuBarAccounts() -> [AccountConfig] {
@@ -102,8 +108,42 @@ final class UsageStore {
         }
     }
 
-    func menuBarItems() -> [MenuBarItem] {
-        menuBarAccounts().map { MenuBarItem(provider: $0.provider, used: used($0)) }
+    func menuBarItems(now: Date = .now) -> [MenuBarItem] {
+        menuBarAccounts().map { account in
+            let state = state(account)
+            let selection = state.usage?.menuBarSelection(settings.menuBarWindow, now: now)
+            return MenuBarItem(provider: account.provider, accountName: account.name, windowName: selection?.label,
+                               used: selection?.window.effectiveUsed(now: now), measuredAt: state.usage?.measuredAt,
+                               isStale: state.error != .apiKeyLogin && !state.isCurrent(now: now),
+                               awaitingReset: selection?.window.hasReset(now: now) == true)
+        }
+    }
+
+    func refreshSummary(now: Date) -> String {
+        if isRefreshing { return String(localized: "Updating…") }
+        if accounts.isEmpty { return String(localized: "No accounts") }
+        let readings = accounts.compactMap { state($0).usage?.measuredAt }
+        let failures = accounts.filter { state($0).error?.kind == .failure }.count
+        let unavailable = accounts.contains { !state($0).isCurrent(now: now) && state($0).error != .apiKeyLogin }
+        let prefix: String
+        if failures > 0 {
+            prefix = failures == accounts.count ? String(localized: "Refresh failed") : String(localized: "Some refreshes failed")
+        } else if unavailable {
+            prefix = String(localized: "Readings not current")
+        } else {
+            guard let oldest = readings.min() else { return String(localized: "No plan limits") }
+            let age = UsageFormat.age(since: oldest, now: now)
+            return now.timeIntervalSince(oldest) < 60 ? String(localized: "Updated just now") : String(localized: "Updated \(age)")
+        }
+        guard let oldest = readings.min() else { return prefix }
+        return String(localized: "\(prefix) · last reading \(UsageFormat.age(since: oldest, now: now))")
+    }
+
+    func retry(_ account: AccountConfig) async {
+        guard !isRefreshing, !state(account).isRefreshing else { return }
+        await refresh([account])
+        arrange()
+        saveCache()
     }
 
     /// The marker is useful only when some accounts are left out of the menu bar.
@@ -244,7 +284,7 @@ final class UsageStore {
     }
 
     private func refresh(_ account: AccountConfig, context: FetchContext) async {
-        guard let provider = providers[account.provider] else { return }
+        guard !state(account).isRefreshing, let provider = providers[account.provider] else { return }
         states[account.id, default: AccountState()].isRefreshing = true
         let cached = states[account.id]?.usage
         do {

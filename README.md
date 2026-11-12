@@ -78,6 +78,8 @@ The app finds the accounts by itself, on launch and on each refresh:
 - **Show:** the top account of each provider (default), the account closest to its limit, accounts you choose, or the icon only.
 - **Limit:** the 5-hour window, or the weekly window when there is no 5-hour window (default). You can also choose weekly first, or whichever is closer to its limit.
 - **Used / Left:** the popover header and Settings switch between quota used and quota left. The setting applies to the menu bar and every card.
+- **Freshness:** a warning beside a menu bar value means the reading is not current. Hover to see the account, selected window, and reading age. A passed reset shows a dash until a fresh reading confirms usage.
+- **Recovery:** affected cards offer Retry, Copy sign-in command, or Choose Codex CLI… as appropriate.
 - **Order:** drag a card above or below another card of the same provider, or right-click it. The top card of each provider goes in the menu bar.
 
 ## Where the numbers come from
@@ -132,7 +134,7 @@ log stream --level info --predicate 'subsystem == "io.github.aliaks-ei.Leeway"'
 ```
 
 - `--dump` prints every account it finds, with its readings. It never prints tokens.
-- `--render` writes PNGs in the light and dark themes: the popover, the menu bar label and Settings. Add `--demo` to draw made-up accounts instead of yours; the images in `docs/images` in this README come from it.
+- `--render` writes PNGs in the light and dark themes: the popover, the menu bar label and Settings. Add `--demo` to draw made-up accounts instead of yours; the images in `docs/images` in this README come from it. Demo rendering also writes `status-*.png` and `menubar-status-*.png` examples of failed refreshes, expired resets, and recovery actions.
 - The log shows fetch errors, renewals and discovery. Emails and paths are private in the log; tokens are never logged.
 
 ## Development

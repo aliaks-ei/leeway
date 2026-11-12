@@ -1,4 +1,5 @@
 import AppKit
+import LeewayCore
 import SwiftUI
 
 /// The Settings window. A custom `Window` scene, because `SettingsLink` does not bring a menu bar app
@@ -9,6 +10,20 @@ import SwiftUI
 @MainActor
 enum SettingsWindow {
     static let id = "settings"
+
+    static func chooseCodex(_ openWindow: OpenWindowAction, settings: AppSettings) {
+        show(openWindow)
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.showsHiddenFiles = true
+        panel.treatsFilePackagesAsDirectories = true
+        panel.directoryURL = URL(fileURLWithPath: "/opt/homebrew/bin")
+        panel.prompt = String(localized: "Use")
+        panel.message = String(localized: "Choose the codex program")
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        settings.codexPath = url.path
+    }
 
     static func show(_ openWindow: OpenWindowAction) {
         NSApp.setActivationPolicy(.regular)

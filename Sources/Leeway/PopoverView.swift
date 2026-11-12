@@ -19,7 +19,7 @@ struct PopoverView: View {
                 if store.accounts.isEmpty {
                     EmptyState()
                         .padding(14)
-                } else if contentHeight > maxContentHeight {
+                } else if !staticRender && contentHeight > maxContentHeight {
                     ScrollView {
                         sections(now: context.date)
                     }
@@ -61,7 +61,8 @@ struct PopoverView: View {
                 Text("Usage")
                     .font(.headline)
                     .accessibilityAddTraits(.isHeader)
-                Text(subtitle(now: now))
+                Text(store.refreshSummary(now: now))
+                    .fixedSize(horizontal: false, vertical: true)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -79,14 +80,6 @@ struct PopoverView: View {
             }
         }
         .padding(.horizontal, 2)
-    }
-
-    private func subtitle(now: Date) -> String {
-        if store.isRefreshing { return String(localized: "Updating…") }
-        if store.accounts.isEmpty { return String(localized: "No accounts") }
-        guard let last = store.lastRefresh else { return String(localized: "\(store.accounts.count) accounts") }
-        guard now.timeIntervalSince(last) >= 60 else { return String(localized: "Updated just now") }
-        return String(localized: "Updated \(UsageFormat.age(since: last, now: now))")
     }
 }
 
@@ -314,6 +307,9 @@ private extension View {
 }
 
 private struct AccountCard: View {
+    @Environment(UsageStore.self) private var store
+    @Environment(\.openWindow) private var openWindow
+    @State private var commandCopied = false
     @Environment(AppSettings.self) private var settings
     let account: AccountConfig
     let state: AccountState
@@ -323,8 +319,7 @@ private struct AccountCard: View {
     private var compact: Bool { settings.compactCards }
 
     private var isFresh: Bool {
-        guard let usage = state.usage else { return false }
-        return state.error == nil && now.timeIntervalSince(usage.measuredAt) < 15 * 60
+        state.isCurrent(now: now)
     }
 
     var body: some View {
@@ -380,12 +375,19 @@ private struct AccountCard: View {
                     .foregroundStyle(.secondary)
             }
 
+            if let usage = state.usage, !isFresh {
+                Label("Last reading \(UsageFormat.age(since: usage.measuredAt, now: now))", systemImage: "clock.badge.exclamationmark")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
             if let error = state.error {
                 Label(error.message, systemImage: error.symbol)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
+                recoveryActions(error)
             }
         }
         .padding(.horizontal, 11)
@@ -399,6 +401,33 @@ private struct AccountCard: View {
         .accessibilityLabel(account.name)
     }
 
+    @ViewBuilder
+    private func recoveryActions(_ error: UsageError) -> some View {
+        HStack(spacing: 10) {
+            if error.kind != .info {
+                Button(state.isRefreshing ? "Retrying…" : "Retry") {
+                    Task { await store.retry(account) }
+                }
+                .disabled(store.isRefreshing || state.isRefreshing)
+            }
+            if let command = error.recoveryCommand(for: account) {
+                Button(commandCopied ? "Copied" : "Copy sign-in command") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(command, forType: .string)
+                    commandCopied = true
+                }
+                .help(command)
+            }
+            if error == .codexNotFound {
+                Button("Choose Codex CLI…") {
+                    SettingsWindow.chooseCodex(openWindow, settings: settings)
+                }
+            }
+        }
+        .controlSize(.small)
+        .onChange(of: error) { commandCopied = false }
+    }
+
     @ViewBuilder private var freshness: some View {
         if state.isRefreshing && state.usage == nil {
             ProgressView().controlSize(.mini)
@@ -406,9 +435,11 @@ private struct AccountCard: View {
         } else if let usage = state.usage {
             let age = UsageFormat.age(since: usage.measuredAt, now: now)
             HStack(spacing: 5) {
-                Circle()
-                    .fill(isFresh ? Palette.fresh : Color.secondary.opacity(0.5))
-                    .frame(width: 6, height: 6)
+                if isFresh {
+                    Circle().fill(Palette.fresh).frame(width: 6, height: 6)
+                } else {
+                    Image(systemName: "exclamationmark.circle")
+                }
                 Text(age)
             }
             .font(.subheadline)
@@ -429,7 +460,7 @@ private struct WindowRow: View {
     var compact = false
 
     var body: some View {
-        let used = window?.effectiveUsed(now: now)
+        let used = window.flatMap { $0.effectiveUsed(now: now) }
         // In "left" mode the bar shows what remains; the color still follows how much is used.
         let shown = used.map { metric.value(used: $0) }
         VStack(alignment: .leading, spacing: 3) {
@@ -454,7 +485,7 @@ private struct WindowRow: View {
                 }
             }
             .font(.callout)
-            if !compact {
+            if !compact || window?.hasReset(now: now) == true {
                 Text(resetText)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -475,7 +506,7 @@ private struct WindowRow: View {
 
     private var resetText: String {
         guard let window else { return String(localized: "No data yet") }
-        if window.hasReset(now: now) { return String(localized: "Window reset since last reading") }
+        if window.hasReset(now: now) { return String(localized: "Reset expected · awaiting update") }
         if let length = window.fullLength, window.resetsAt == nil {
             // An unused window has no reset time: it starts on the first message.
             return String(localized: "Resets \(UsageFormat.duration(from: now, to: now.addingTimeInterval(length))) after first use")
@@ -486,6 +517,7 @@ private struct WindowRow: View {
 
     /// "64% used, resets in 2 hours, 10 minutes".
     private func spokenValue(shown: Double?) -> String {
+        if window?.hasReset(now: now) == true { return String(localized: "Reset expected, awaiting update") }
         guard let shown else { return String(localized: "No data yet") }
         let percent = UsageFormat.percent(shown)
         let amount = metric == .used ? String(localized: "\(percent) used") : String(localized: "\(percent) left")
