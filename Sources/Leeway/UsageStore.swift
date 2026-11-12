@@ -14,6 +14,7 @@ final class UsageStore {
     private(set) var states: [String: AccountState] = [:]
     private(set) var lastRefresh: Date?
     private(set) var isRefreshing = false
+    var displayDate = Date.now
 
     @ObservationIgnored let settings: AppSettings
     /// Finds the config folders: `AccountRepository.scan` in the app, fixtures in `--render --demo`.

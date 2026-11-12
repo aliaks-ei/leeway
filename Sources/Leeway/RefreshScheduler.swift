@@ -76,6 +76,7 @@ final class RefreshScheduler {
     private var canRefresh: Bool { !isScreenLocked && isNetworkAvailable }
 
     private func tick() async {
+        store.displayDate = .now
         await store.applyClaudeSnapshots()
         refreshIfDue()
     }
